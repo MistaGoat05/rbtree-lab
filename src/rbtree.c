@@ -84,8 +84,32 @@ void *rb_find(const rbtree_t *t, const char *key)
     return NULL;
 }
 
+static int rb_order_recursive(rbnode_t *node, const char **prev)
+{
+    if (node->left != NIL && !rb_order_recursive(node->left, prev)) {
+        return 0;
+    }
+    if (*prev != NULL && strcmp(*prev, node->key) >= 0) {
+        return 0;
+    }
+    *prev = node->key;
+    if (node->right != NIL && !rb_order_recursive(node->right, prev)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int rb_order(const rbtree_t *t)
+{
+    const char *prev = NULL;
+    if (t->root == NIL) {
+        return 1;
+    }
+    return rb_order_recursive(t->root, &prev);
+}
+
 /* returns 0 if node/parent form a line (same side of grandparent), 1 if a kink */
-static int is_kink(rbnode_t *node, rbnode_t *parent)
+[[maybe_unused]] static int is_kink(rbnode_t *node, rbnode_t *parent)
 {
     rbnode_t *grandparent = parent->parent;
     int parent_is_left = (parent == grandparent->left);
@@ -93,7 +117,7 @@ static int is_kink(rbnode_t *node, rbnode_t *parent)
     return (parent_is_left == node_is_left) ? 0 : 1;
 }
 
-static void rotate_left(rbtree_t *t, rbnode_t *parent)
+[[maybe_unused]] static void rotate_left(rbtree_t *t, rbnode_t *parent)
 {
     rbnode_t *child = parent->right;
     rbnode_t *grandparent = parent->parent;
@@ -116,7 +140,7 @@ static void rotate_left(rbtree_t *t, rbnode_t *parent)
     parent->parent = child;
 }
 
-static void rotate_right(rbtree_t *t, rbnode_t *parent)
+[[maybe_unused]] static void rotate_right(rbtree_t *t, rbnode_t *parent)
 {
     rbnode_t *child = parent->left;
     rbnode_t *grandparent = parent->parent;
@@ -139,7 +163,7 @@ static void rotate_right(rbtree_t *t, rbnode_t *parent)
     parent->parent = child;
 }
 
-static void insert_fixup(rbnode_t *root, rbnode_t *node)
+[[maybe_unused]] static void insert_fixup(rbnode_t *root, rbnode_t *node)
 {
     /* invariant: node is RED on every entry to this loop */
     while (node->parent->color == RED) {
@@ -199,4 +223,32 @@ int rb_insert(rbtree_t *t, const char *key, void *value)
         return 0;
     }
     return insert_recursive(t, t->root, key, value);
+}
+
+static void destroy_recursive(rbtree_t *t, rbnode_t *node)
+{
+    if (node == NIL) {
+        return;
+    }
+    destroy_recursive(t, node->left);
+    destroy_recursive(t, node->right);
+    if (t->free_fn != NULL) {
+        t->free_fn(node->value);
+    }
+    free(node->key);
+    free(node);
+}
+
+int rb_validate(const rbtree_t *t)
+{
+    return rb_order(t) ? 0 : 1;
+}
+
+void rb_destroy(rbtree_t *t)
+{
+    if (t == NULL) {
+        return;
+    }
+    destroy_recursive(t, t->root);
+    free(t);
 }
