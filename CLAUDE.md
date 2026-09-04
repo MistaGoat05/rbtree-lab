@@ -22,3 +22,6 @@ looks wrong, stop and explain why instead.
 - For any multi-file or algorithmic change: propose a plan and wait for
 approval before editing.
 - Commit only from a green state; message format "M<n>: <what>".
+
+## Prompt Log
+- After each user prompt, append a ## <date> entry to PROMPTLOG.md with the prompt and a brief summary of the response.
