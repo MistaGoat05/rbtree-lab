@@ -265,31 +265,7 @@ void rb_destroy(rbtree_t *t)
     free(t);
 }
 
-static int rb_order_recursive(rbnode_t *node, const char **prev)
-{
-    if (node->left != NIL && !rb_order_recursive(node->left, prev)) {
-        return 0;
-    }
-    if (*prev != NULL && strcmp(*prev, node->key) >= 0) {
-        return 0;
-    }
-    *prev = node->key;
-    if (node->right != NIL && !rb_order_recursive(node->right, prev)) {
-        return 0;
-    }
-    return 1;
-}
-
-static int rb_order(const rbtree_t *t)
-{
-    const char *prev = NULL;
-    if (t->root == NIL) {
-        return 1;
-    }
-    return rb_order_recursive(t->root, &prev);
-}
-
-int rb_black_height(const rbnode_t *node)
+static int rb_black_height(const rbnode_t *node)
 {
     if(node == NIL)
     {
@@ -314,12 +290,86 @@ int rb_black_height(const rbnode_t *node)
     return -1;
 }
 
-int rb_validate(const rbtree_t *t)
+static int rb_red_red_check(const rbnode_t *node)
 {
-    if (!rb_order(t)) {
+    if(node->left != NIL && !rb_red_red_check(node->left))
+    {
+        return 0;
+    }
+    if(node->color == RED && node->parent->color == RED)
+    {
+        return 0;
+    }
+    if(node->right != NIL && !rb_red_red_check(node->right))
+    {
+        return 0;
+    }
+    return 1;
+}
+
+static int rb_order_recursive(rbnode_t *node, const char **prev)
+{
+    if (node->left != NIL && !rb_order_recursive(node->left, prev)) {
+        return 0;
+    }
+    if (*prev != NULL && strcmp(*prev, node->key) >= 0) {
+        return 0;
+    }
+    *prev = node->key;
+    if (node->right != NIL && !rb_order_recursive(node->right, prev)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int rb_order(const rbtree_t *t)
+{
+    const char *prev = NULL;
+    if (t->root == NIL) {
         return 1;
     }
-    if (t->root->color != BLACK) {
+    return rb_order_recursive(t->root, &prev);
+}
+
+static size_t rb_size_check_recursive(const rbnode_t *node, size_t *size)
+{
+    if(node != NIL)
+    {
+        (*size)++;
+        rb_size_check_recursive(node->left, size);
+        rb_size_check_recursive(node->right, size);
+    }
+    return *size;
+}
+
+static size_t rb_size_check(const rbtree_t *t)
+{
+    size_t size = 0;
+    if(t->root == NIL)
+    {
+        return 0;
+    }
+    return rb_size_check_recursive(t->root, &size);
+}
+
+int rb_validate(const rbtree_t *t)
+{
+    if(t->root->color != BLACK) {
+        return 1;
+    }
+    if(!rb_red_red_check(t->root))
+    {
+        return 1;
+    }
+    if(rb_black_height(t->root) == -1)
+    {
+        return 1;
+    }
+    if(!rb_order(t)) {
+        return 1;
+    }
+    if(rb_size_check(t) != t->size)
+    {
         return 1;
     }
     return 0;
