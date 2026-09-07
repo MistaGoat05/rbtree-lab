@@ -27,11 +27,6 @@ static void recolor(rbnode_t *node)
     node->color = (node->color == BLACK) ? RED : BLACK;
 }
 
-static int rb_is_black(rbnode_t *node)
-{
-    return (node->color == BLACK) ? 1 : 0;
-}
-
 static rbnode_t *node_create(const char *key, void *value, rbnode_t *parent)
 {
     rbnode_t *node = malloc(sizeof(*node));
@@ -294,12 +289,37 @@ static int rb_order(const rbtree_t *t)
     return rb_order_recursive(t->root, &prev);
 }
 
+int rb_black_height(const rbnode_t *node)
+{
+    if(node == NIL)
+    {
+        return 1;
+    }
+
+    int leftBlackHeight = rb_black_height(node->left);
+    if(leftBlackHeight == -1)
+    {
+        return -1;
+    }
+    int rightBlackHeight = rb_black_height(node->right);
+    if(rightBlackHeight == -1)
+    {
+        return -1;
+    }
+    
+    if (leftBlackHeight == rightBlackHeight)
+    {
+        return leftBlackHeight + (node->color == BLACK ? 1 : 0);
+    }
+    return -1;
+}
+
 int rb_validate(const rbtree_t *t)
 {
     if (!rb_order(t)) {
         return 1;
     }
-    if (!rb_is_black(t->root)) {
+    if (t->root->color != BLACK) {
         return 1;
     }
     return 0;
