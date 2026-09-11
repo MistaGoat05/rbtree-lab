@@ -22,9 +22,65 @@ struct rbtree
 static rbnode_t NIL_NODE = { .color = BLACK };
 static rbnode_t *const NIL = &NIL_NODE;
 
+static rbnode_t *get_node(rbtree_t *t, const char *key)
+{
+    rbnode_t *current = t->root;
+    while (current != NIL) {
+        int cmp = strcmp(key, current->key);
+        if (cmp == 0) {
+            return current;
+        }
+        current = (cmp < 0) ? current->left : current->right;
+    }
+    return NULL; //Node not found
+}
+
 static void recolor(rbnode_t *node)
 {
     node->color = (node->color == BLACK) ? RED : BLACK;
+}
+
+/* returns 0 if node/parent form a line (same side of grandparent),
+ * 1 if node is a left-kink (node is parent's left child),
+ * 2 if node is a right-kink (node is parent's right child) */
+static int is_kink(rbnode_t *node, rbnode_t *parent)
+{
+    rbnode_t *grandparent = parent->parent;
+    int parent_is_left = (parent == grandparent->left);
+    int node_is_left = (node == parent->left);
+    if (parent_is_left == node_is_left) {
+        return 0;
+    }
+    return node_is_left ? 1 : 2;
+}
+
+static int is_leaf(rbnode_t *node)
+{
+    return (node->left == NIL && node->right == NIL) ? 1 : 0;
+}
+
+[[maybe_unused]] static rbnode_t *minimum(rbnode_t *node)
+{
+    if(node->left != NIL) {return minimum(node->left);}
+    else {return node;}
+}
+
+static void relink_parent(rbtree_t *t, rbnode_t *node, rbnode_t *x)
+{
+    rbnode_t *grandparent = node->parent;
+    if(grandparent == NIL)
+    {
+        t->root = x;
+    }
+    else if(grandparent->left == node)
+    {
+        grandparent->left = x;
+    }
+    else
+    {
+        grandparent->right = x;
+    }
+    x->parent = grandparent;
 }
 
 static rbnode_t *node_create(const char *key, void *value, rbnode_t *parent)
@@ -81,20 +137,6 @@ void *rb_find(const rbtree_t *t, const char *key)
         current = (cmp < 0) ? current->left : current->right;
     }
     return NULL;
-}
-
-/* returns 0 if node/parent form a line (same side of grandparent),
- * 1 if node is a left-kink (node is parent's left child),
- * 2 if node is a right-kink (node is parent's right child) */
-static int is_kink(rbnode_t *node, rbnode_t *parent)
-{
-    rbnode_t *grandparent = parent->parent;
-    int parent_is_left = (parent == grandparent->left);
-    int node_is_left = (node == parent->left);
-    if (parent_is_left == node_is_left) {
-        return 0;
-    }
-    return node_is_left ? 1 : 2;
 }
 
 static void rotate_left(rbtree_t *t, rbnode_t *parent)
@@ -239,6 +281,26 @@ int rb_insert(rbtree_t *t, const char *key, void *value)
     if (result != NIL) {
         insert_fixup(t, result);
     }
+    return 0;
+}
+
+int rb_delete(rbtree_t *t, const char *key)
+{
+    rbnode_t *node = get_node(t, key);
+    if(node == NULL) {return -1;}
+    if(is_leaf(node) && node->color == RED) {goto delete;}
+
+    //This is where rb_delete_fixup() will go
+
+delete:
+    rbnode_t *x = (node->left != NIL) ? node->left : node->right;
+    relink_parent(t, node, x);
+    free(node->key);
+    if (t->free_fn != NULL) {
+    t->free_fn(node->value);
+    }
+    free(node);
+    t->size--;
     return 0;
 }
 

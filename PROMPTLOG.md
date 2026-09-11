@@ -4,6 +4,12 @@ A running log of prompts given to Claude Code in this repository, and a brief su
 
 ---
 
+# Student Responses
+
+My Student responses to questions/writeups asked in the HW1 documentation.
+
+_Evening 4:_ 
+
 ## 2026-09-02
 
 **Prompt:** `/init` — analyze the codebase and create a CLAUDE.md file.
@@ -544,3 +550,62 @@ A running log of prompts given to Claude Code in this repository, and a brief su
 
 **Prompt:** "I've created a rb_red_red_check, simulate 2 trees, one with a red-red violation and one without. Walk through the code step by step with me... Ask a question and then wait for my response..." (initial search of `src/rbtree.c` came up empty; user redirected to look again without pulling from git)
 **Response:** Located `rb_red_red_check` at rbtree.c:293-307. Beginning a Socratic, one-question-at-a-time walkthrough over two simulated trees per the user's instructions; no code changes made yet.
+
+## 2026-09-11
+
+**Prompt:** "Write the failing table-driven tests for rb_delete first: red leaf, black leaf with red sibling, node with two children, root deletion, a black node with exactly one (red) child, and the mirrored variants. Each case asserts rb_validate and rb_size afterward. Don't touch rbtree.c yet. Run make test and show me the failures."
+**Response:** Explored `include/rbtree.h` (rb_delete declared, unimplemented) and `tests/test_rbtree.c` (flat tests, no table-driven pattern yet) via a plan-mode Explore pass, then proposed and got approval on a plan for 8 table-driven cases (with hand-derived `rb_insert` sequences producing each target shape, since node colors aren't inspectable from outside `rbtree.c`). User asked two follow-up questions (black leaf w/ black sibling; node w/ two black children) mid-review; added `two_black_children` to the plan, then at implementation time user said to drop it and keep only the originally-specified 8 cases. Added `delete_case_t`, the 7 case-key arrays, `delete_cases[]`, and `test_delete_cases()` to tests/rbtree_test.c:69-124 (no changes to rbtree.c or rbtree.h). User separately added an empty `rb_delete` stub to `src/rbtree.c`. Ran `make test`: fails to compile, but from `-Werror` on the stub's unused `t`/`key` parameters and on `is_leaf` now being unused (not a missing-return error as anticipated) — both errors are in `src/rbtree.c`, which was not touched this turn.
+
+**Prompt:** "Rerun make test so I can see the tests failing"
+**Response:** Ran `make test`. User had fixed the stub's unused-parameter/function warnings in the IDE, so it compiled clean this time; failed instead on a real runtime assertion (`rb_size(t) == c->expect_size_after` in `test_delete_cases`, first case), since the stub is still a no-op. No files touched.
+
+**Prompt:** "Is there a way in this code to access a node to free it from memory with the parameters allowed to us in rb_delete or will I have to create a getNode() method? Stop. Why were you 'creating...' something. I asked you a question."
+**Response:** Answered directly, no code written: `rb_delete`'s own `(t, key)` params are sufficient since `rbnode_t`/`rbtree_t` are defined in the same translation unit — it can traverse `t->root` by key comparison itself, same as `insert_recursive` already does. Noted `rb_find` can't be reused for this since it returns `void *value`, not the node pointer needed to free/splice.
+
+**Prompt:** "Ok so essentially the best thing to do would be to write a method similar to rb_find called get_node which we can use to assign a node variable and free it from there? I just dont see another one line way of getting the node 'object' to free"
+**Response:** Confirmed the approach (static helper mirroring `insert_recursive`'s traversal, naming convention matches `node_create`/`insert_recursive` — no `rb_` prefix). Flagged that locating the node is only half of delete: a two-children node can't just be freed, it needs the standard BST splice/successor-swap first. No code written.
+
+**Prompt:** "Alright, let's start planning how to implement the delete function, as you can see I already got started a little... I want it to be implemented in a way similar to insertion where deletion itself is a relatively simple task and the fixup is what actually checks for what type of deletion it is."
+**Response:** Re-entered plan mode (overwrote the prior test-writing plan — different task). Read user's in-progress `rb_delete`/`get_node` skeleton in `src/rbtree.c`; found `get_node` already correct, flagged two bugs in `rb_delete` (`free(key)` instead of `free(node->key)`; missing `node == NULL` check). Asked two design questions via AskUserQuestion (two-children reduction strategy; how `delete_fixup` learns x's parent given the shared `NIL` sentinel); user chose "copy successor's key/value into target" and "stash parent in `NIL->parent`, CLRS classic trick." Wrote full implementation outline (new helpers `minimum`/`delete_fixup`, full `rb_delete` step list, `delete_fixup` CLRS case 1-4 breakdown, build-up order) to the plan file and got approval via ExitPlanMode. No source edits.
+
+**Prompt:** "What do you mean only call delete fixup if the node is black. What if there's a red internal node with two children? Or even worse one red child and one black child? ... I've added a delete keyword and a goto: delete call in rb_delete to represent deleting a red node with red child."
+**Response:** Read the user's actual added code (`if(is_leaf(node) && node->color == RED) goto delete;`) and clarified the real logic: "red node with red child" is an invariant violation and can't occur; the fixup-skip decision is about whichever node is actually unlinked (`node` itself for ≤1 child, the successor `y` for 2 children), never about `node`'s own color/children when it has two children. Confirmed the user's actual line is correct for the leaf case but will need reapplying to `y` once the two-children branch exists. No code written.
+
+**Prompt:** "Wait I meant a red node with no children (red leaf node case) and in this implementation rb_delete_fixup needs to run no matter what so that at the very least it can remove the parent child relationship between node and child. I think Im just now realizing this is going to be a long process of making normal and recursive methods for each individual case."
+**Response:** Corrected the bigger misconception: the parent/child relink is `rb_delete`'s job, not `delete_fixup`'s — exactly mirrors how `insert_recursive` links nodes before `insert_fixup` ever runs. `delete_fixup` only fires conditionally (only when the unlinked node was black); for a red leaf the relink alone already leaves a valid tree, nothing to fix. Reassured re: scope — `delete_fixup` is one iterative function like `insert_fixup`, not a method per case. No code written.
+
+**Prompt:** "Ok, I don't know why but I'm entirely lost. Should I be passing delete off to a recursive method? How am I supposed to handle linking/unlinking the child and parent in rb_delete without the method balooning into some crazy 40+ line method?"
+**Response:** Explained the relink needs no recursion (no search — `get_node` already found the target) and showed the existing `rotate_left`/`rotate_right` tail block (rbtree.c:115-122, 138-145) as the exact ~7-line template to rename/reuse for delete's relink. No code written (still just explanation).
+
+**Prompt:** "It's been a while since I looked at this code but wouldn't the grandparent be the childs parents parent not the childs parent"
+**Response:** Clarified `grandparent = parent->parent` in `rotate_left` and "child's parent's parent" are the same node, since `parent` already *is* `child`'s parent by construction (`child = parent->right`) — no discrepancy, just two ways of deriving the same pointer.
+
+**Prompt:** "Why change the names though? Like isn't child a much simpler name to remember and visualize than 'x'? And why splice_target instead of parent? It just seems weird."
+**Response:** Explained naming choices were just for the explanation, not required: `x` matches CLRS's own textbook variable (and can be `NIL`, unlike a "real" child); `splice_target` avoided colliding with `node`/`y` which mean different things in different branches of the same function. Told the user `child`/`parent` are fine to use when actually writing it.
+
+**Prompt:** "I'm so lost"
+**Response:** Paused the deep-dive and restated the whole `rb_delete` shape in four plain steps (find / reduce-if-two-children / unlink / maybe-fix), asked which step specifically felt foggy rather than continuing to add detail.
+
+**Prompt:** "Alright well what happens when the node has two children and its succesor is just its right child"
+**Response:** Walked through the concrete case where the successor is the node's immediate right child (no left-spine walk needed), showing that the chosen design (copy payload into `node`, then unlink whichever node is actually `y`) needs zero special-casing here — the generic relink-off-`y`'s-real-parent logic already handles it, unlike CLRS's classic node-relinking approach which does need a special case for this.
+
+**Prompt:** "You know what, just walk me through the most basic deletion"
+**Response:** Walked through deleting a red leaf from a concrete 3-node tree (`d`/`b`/`f`) step by step against the user's own code (`get_node`, `is_leaf`+color check), and pointed out the still-missing piece even in this simplest case: nothing yet updates `node->parent->left`/`right` to `NIL` before freeing, which would leave a dangling pointer.
+
+**Prompt:** "We just don't get pictures for every deletion case and I feel like the only ones I really understood were red leaf, black leaf and black with red leaf"
+**Response:** Produced ASCII before/after diagrams for all four shapes discussed so far: red leaf, black node with one red child, black leaf with red sibling (full rotation walkthrough), and two-children/successor-swap (new). No code written.
+
+**Prompt:** "Ok, I think that cleared up the confusion for me, if we have two children then inside rb_fixup we replace the original nodes values with its succesors values... can we just update nodes values with copies of its succesors values and then set node equal to the succesor so that it gets freed instead?"
+**Response:** Corrected: the successor swap happens in `rb_delete`, not `delete_fixup` (which never sees the successor at all). Confirmed the pointer-semantics question (mutations through a pointer are visible everywhere, no copying). Confirmed and endorsed the user's reassignment idea (`node = successor` after copying its payload) as the clean way to avoid needing a separate `splice_target` name.
+
+**Prompt:** "I feel like part of the reason I'm getting confused is because we're going wayyyyy ahead. Let's just do this one at a time, starting with the deletions that essentially come free. My issue is that this method already hits the max number of lines possible... how are we going to determine which node will belong to the parent node after deletio[n]"
+**Response:** Re-entered plan mode, narrowed scope to just `red_leaf_*`/`one_red_child_*`/`root_deletion` (deferred two-children + full fixup loop to later passes). Answered the "which node takes the parent's slot" question with the one-line `x = (node->left != NIL) ? node->left : node->right;`. Proposed extracting the relink into its own small helper to keep `rb_delete` short. Found and flagged a real pre-existing bug: `rb_red_red_check` has no `NIL` guard and will segfault on an empty tree, which `root_deletion` will produce. Updated plan file, ExitPlanMode approved. No source edits.
+
+**Prompt:** "So we just replace the node with its left or right child in (what we're calling x's) grandparent"
+**Response:** Re-entered plan mode briefly; confirmed this is correct, framed from the opposite side (node's parent = x's grandparent before the relink, becomes x's direct parent after). Added a short terminology note to the plan file, ExitPlanMode approved. No source edits.
+
+**Prompt:** "Im supposed to be arguing with you but I just don't know how. I can't implement this with the knowledge about deletions that I have right now... I want to write it with a tool that's able to do real time testing and translate methods from my java brain into C. For now I am going to add [describes their own goto/x/relink_child plan]... This should allow the first two asserts (red leaves)... after which I will make my first commit, take a break..."
+**Response:** Re-entered plan mode. Validated the user's described approach as correct, but caught a real gap: no `t->size--` anywhere in it, which would fail the size assertion even though the rest is correct. Updated the plan file to record that the user is authoring `rb_delete` themselves from here (Claude reviews/tests/translates, does not author) and to scope the immediate increment to just the two red-leaf cases. Updated memory (`feedback_no_solution_code.md`) to record this flip in collaboration model for the delete phase specifically. ExitPlanMode approved. No source edits.
+
+**Prompt:** "You're handwaving away the 'arguing' portion of the assignment as something I want to do. I'm completely fine with just discussing the assignment and coming to our own conclusions but the teacher specifically states 'Then plan mode and, ARGUE WITH THE PLAN ... record the revision in PROMPTLOG.md ... then implement in slices'"
+**Response:** Acknowledged the correction — the "arguing" comment was a literal assignment-workflow requirement (plan mode → argue with the plan → record the revision here → implement in slices), not just the user reflecting on their own confusion. In auditing against that requirement, found and fixed a real diligence gap: only one PROMPTLOG entry had been written since this session's plan-mode work on `rb_delete` started, despite CLAUDE.md requiring one per prompt — backfilled the seventeen missing entries above in this same edit.
