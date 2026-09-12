@@ -65,22 +65,46 @@ static int is_leaf(rbnode_t *node)
     else {return node;}
 }
 
-static void relink_parent(rbtree_t *t, rbnode_t *node, rbnode_t *x)
+static int delete_node(rbtree_t *t, rbnode_t *node)
 {
-    rbnode_t *grandparent = node->parent;
-    if(grandparent == NIL)
-    {
-        t->root = x;
+    free(node->key);
+    if (t->free_fn != NULL) {
+    t->free_fn(node->value);
     }
-    else if(grandparent->left == node)
+    free(node);
+    t->size--;
+    return 0;
+}
+
+/*
+  Replaces node u with node v. Replaces parent but not children.
+  Updating the children is the calling functions job.
+  U=Node being replaced
+  V=Node replacing
+*/
+static void transplant(rbtree_t *t, rbnode_t *u, rbnode_t *v)
+{
+    if(u->parent == NIL)
     {
-        grandparent->left = x;
+        t->root = v;
+    }
+    else if(u->parent->left == u)
+    {
+        u->parent->left = v;
     }
     else
     {
-        grandparent->right = x;
+        u->parent->right = v;
     }
-    x->parent = grandparent;
+    v->parent = u->parent;
+}
+
+static int count_children(rbnode_t *node)
+{
+    int count = 0;
+    if(node->left != NIL) {count++;}
+    if(node->right != NIL) {count++;}
+    return count;
 }
 
 static rbnode_t *node_create(const char *key, void *value, rbnode_t *parent)
@@ -185,7 +209,7 @@ static void rotate_right(rbtree_t *t, rbnode_t *parent)
     parent->parent = child;
 }
 
-static void fixup_rotate(rbtree_t *t, rbnode_t *node, int kink)
+static void insert_fixup_rotate(rbtree_t *t, rbnode_t *node, int kink)
 {
     rbnode_t *parent = node->parent;
     rbnode_t *grandparent = parent->parent;
@@ -226,7 +250,7 @@ static void insert_fixup(rbtree_t *t, rbnode_t *node)
             recolor(grandparent);
             node = grandparent;
         } else {
-            fixup_rotate(t, node, is_kink(node, parent));
+            insert_fixup_rotate(t, node, is_kink(node, parent));
             break; // Rotation fixup only runs once 
         }
     }
@@ -284,24 +308,34 @@ int rb_insert(rbtree_t *t, const char *key, void *value)
     return 0;
 }
 
+static int delete_leaf(rbtree_t *t, rbnode_t *node)
+{
+    transplant(t, node, NIL);
+    return delete_node(t, node);
+}
+
+static int delete_one_child(rbtree_t *t, rbnode_t *node)
+{
+    rbnode_t *child = (node->left != NIL) ? node->left : node->right;
+    transplant(t, node, child);
+    recolor(child); //Handled by delete_fixup when implemented
+    return delete_node(t, node);
+}
+
 int rb_delete(rbtree_t *t, const char *key)
 {
     rbnode_t *node = get_node(t, key);
     if(node == NULL) {return -1;}
-    if(is_leaf(node) && node->color == RED) {goto delete;}
-
-    //This is where rb_delete_fixup() will go
-
-delete:
-    rbnode_t *x = (node->left != NIL) ? node->left : node->right;
-    relink_parent(t, node, x);
-    free(node->key);
-    if (t->free_fn != NULL) {
-    t->free_fn(node->value);
+    if(is_leaf(node) && node->color == RED) 
+    {
+        return delete_leaf(t, node);
     }
-    free(node);
-    t->size--;
-    return 0;
+    else if(count_children(node) == 1)
+    {
+        return delete_one_child(t, node);
+    }
+
+    return -1;
 }
 
 static void destroy_recursive(rbtree_t *t, rbnode_t *node)
