@@ -308,9 +308,131 @@ int rb_insert(rbtree_t *t, const char *key, void *value)
     return 0;
 }
 
+static void fixup_red_sibling(rbtree_t *t, rbnode_t *node, rbnode_t **sibling, int direction)
+{
+    (*sibling)->color = BLACK;
+    node->parent->color = RED;
+    if(direction == 1)
+    {
+        rotate_left(t, node->parent);
+        *sibling = node->parent->right;
+    }
+    else
+    {
+        rotate_right(t, node->parent);
+        *sibling = node->parent->left;
+    }
+}
+
+static void fixup_black_sibling_black_children(rbnode_t **node, rbnode_t **sibling)
+{
+    (*sibling)->color = RED;
+    *node = (*node)->parent;
+}
+
+static void fixup_far_child_black(rbtree_t *t, rbnode_t *node, rbnode_t **sibling, int direction)
+{
+    if(direction == 1) //Diretion of far_child points in same direction as sibling
+    {
+        (*sibling)->left->color = BLACK;
+        (*sibling)->color = RED;
+        rotate_right(t, *sibling);
+        (*sibling) = node->parent->right;
+    }
+    else
+    {
+        (*sibling)->right->color = BLACK;
+        (*sibling)->color = RED;
+        rotate_left(t, *sibling);
+        (*sibling) = node->parent->left;
+    }
+}
+static void fixup_far_child_red(rbtree_t *t, rbnode_t **node, rbnode_t **sibling, int direction)
+{
+    if(direction == 1) //Diretion of close child points in opposite direction of sibling
+    {
+        (*sibling)->color = (*node)->parent->color;
+        (*node)->parent->color = BLACK;
+        (*sibling)->right->color = BLACK;
+        rotate_left(t, (*node)->parent);
+    }
+    else
+    {
+        (*sibling)->color = (*node)->parent->color;    
+        (*node)->parent->color = BLACK;
+        (*sibling)->left->color = BLACK;
+        rotate_right(t, (*node)->parent);
+    }
+    *node = t->root;
+}
+
+[[maybe_unused]] static int delete_fixup(rbtree_t *t, rbnode_t *node)
+{
+    while(node != t->root && node->color == BLACK)
+    {
+        rbnode_t *sibling = (node == node->parent->left) ? node->parent->right : node->parent->left;
+        int direction = (node == node->parent->left) ? 1 : 0; //1=Sibling right child, 0=Sibling left child
+        //Case 1: Red Sibling
+        if(sibling->color == RED) 
+        {
+            fixup_red_sibling(t, node, &sibling, direction);
+        }
+        //Case 2: Black Sibling with Black Children
+        if(sibling->color == BLACK && (sibling->left->color == BLACK && sibling->right->color == BLACK))
+        {
+            fixup_black_sibling_black_children(&node, &sibling);
+        }
+        else
+        {
+            rbnode_t *far_child = (direction == 1) ? sibling->right : sibling->left; //child farthest from node
+            //Case 3: Close Child is Red
+            if(far_child->color == BLACK)
+            {
+                fixup_far_child_black(t, node, &sibling, direction);
+            }
+            //Case 4: Far Child (or both Children) are Red
+            fixup_far_child_red(t, &node, &sibling, direction);
+        }
+    }
+    node->color = BLACK; 
+    return 0;
+}
+
+static int delete_two_children(rbtree_t *t, rbnode_t *node)
+{
+    rbnode_t *successor = minimum(node->right);
+    rbnode_t *x = successor->right;
+    rb_color_t original_color = successor->color;
+
+    transplant(t, successor, successor->right);
+    successor->left = node->left;
+    successor->right = node->right;
+    node->left->parent = successor;
+    node->right->parent = successor;
+
+    transplant(t, node, successor);
+    successor->color = node->color;
+
+    if(original_color == BLACK)
+    {
+        delete_fixup(t, x);
+    }
+
+    return delete_node(t, node);
+}
+
 static int delete_leaf(rbtree_t *t, rbnode_t *node)
 {
     transplant(t, node, NIL);
+    NIL->parent = NULL; //Not strictly necessary but done for bookkeeping
+    return delete_node(t, node);
+}
+
+static int delete_leaf_black(rbtree_t *t, rbnode_t *node)
+{
+    transplant(t, node, NIL);
+    delete_fixup(t, NIL);
+    NIL->parent = NULL;
     return delete_node(t, node);
 }
 
@@ -318,7 +440,7 @@ static int delete_one_child(rbtree_t *t, rbnode_t *node)
 {
     rbnode_t *child = (node->left != NIL) ? node->left : node->right;
     transplant(t, node, child);
-    recolor(child); //Handled by delete_fixup when implemented
+    recolor(child); 
     return delete_node(t, node);
 }
 
@@ -326,13 +448,17 @@ int rb_delete(rbtree_t *t, const char *key)
 {
     rbnode_t *node = get_node(t, key);
     if(node == NULL) {return -1;}
-    if(is_leaf(node) && node->color == RED) 
+    if(is_leaf(node)) 
     {
-        return delete_leaf(t, node);
+        return (node->color == RED) ? delete_leaf(t, node) : delete_leaf_black(t, node);
     }
     else if(count_children(node) == 1)
     {
         return delete_one_child(t, node);
+    }
+    else
+    {
+        return delete_two_children(t, node);
     }
 
     return -1;
