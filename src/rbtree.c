@@ -489,10 +489,7 @@ void rb_destroy(rbtree_t *t)
 
 static int rb_black_height(const rbnode_t *node)
 {
-    if(node == NIL)
-    {
-        return 1;
-    }
+    if(node == NIL) {return 1;}
 
     int leftBlackHeight = rb_black_height(node->left);
     if(leftBlackHeight == -1)
@@ -514,6 +511,8 @@ static int rb_black_height(const rbnode_t *node)
 
 static int rb_red_red_check(const rbnode_t *node)
 {
+    if(node == NIL) {return 1;}
+    
     if(node->left != NIL && !rb_red_red_check(node->left))
     {
         return 0;
